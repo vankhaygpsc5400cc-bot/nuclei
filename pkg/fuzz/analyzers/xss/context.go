@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/antchfx/htmlquery"
-	"github.com/projectdiscovery/nuclei/v3/pkg/fuzz"
 	"github.com/projectdiscovery/nuclei/v3/pkg/fuzz/analyzers"
 	"github.com/projectdiscovery/retryablehttp-go"
 	"golang.org/x/net/html"
@@ -59,7 +58,7 @@ func (a *Analyzer) ApplyInitialTransformation(data string, params map[string]int
 }
 
 // javascriptURIRegex matches javascript: and vbscript: URIs
-var javascriptURIRegex = regexp.MustCompile(`(?i)^(javascript|vbscript):`)
+var javascriptURIRegex = regexp.MustCompile(`(?i)(javascript|vbscript):`)
 
 // srcdocAttrRegex matches srcdoc attributes
 var srcdocAttrRegex = regexp.MustCompile(`(?i)\bsrcdoc\s*=`)
@@ -83,7 +82,6 @@ var eventHandlerAttrs = map[string]bool{
 	"onmouseup":    true,
 	"onmouseout":   true,
 	"onmousemove":  true,
-	"onhover":      true,
 	"onabort":      true,
 	"oncanplay":    true,
 	"oncanplaythrough": true,
@@ -149,7 +147,7 @@ var styleAttrs = map[string]bool{
 // Analyze analyzes the response to detect XSS contexts
 func (a *Analyzer) Analyze(options *analyzers.Options) (bool, string, error) {
 	gr := options.FuzzGenerated
-	payload := gr.OriginalPayload
+	payload := gr.Value
 
 	if payload == "" {
 		return false, "", nil
@@ -260,13 +258,16 @@ func (a *Analyzer) analyzeHTMLContext(body, payload string) ContextType {
 		return ContextTypeNone
 	}
 
+	// Use lowercase for case-insensitive matching
+	payloadLower := strings.ToLower(payload)
+
 	// Find the payload in the document
 	var analyzeNode func(n *html.Node) ContextType
 	analyzeNode = func(n *html.Node) ContextType {
 		// Check if this is a text node containing the payload
 		if n.Type == html.TextNode {
 			text := n.Data
-			if strings.Contains(text, payload) {
+			if strings.Contains(strings.ToLower(text), payloadLower) {
 				// Check parent element context
 				if n.Parent != nil {
 					return a.getContextFromParent(n.Parent)
@@ -276,7 +277,7 @@ func (a *Analyzer) analyzeHTMLContext(body, payload string) ContextType {
 
 		// Check attributes containing the payload
 		for _, attr := range n.Attr {
-			if strings.Contains(attr.Val, payload) {
+			if strings.Contains(strings.ToLower(attr.Val), payloadLower) {
 				if eventHandlerAttrs[strings.ToLower(attr.Key)] {
 					return ContextTypeEventHandler
 				}
@@ -319,8 +320,20 @@ func (a *Analyzer) getContextFromParent(n *html.Node) ContextType {
 
 	tagName := strings.ToLower(atom.String(n.Data))
 
-	// Script elements are in JavaScript context
+	// Script elements are in JavaScript context only if type is not set or is executable
 	if tagName == "script" {
+		// Check if the script has a type attribute
+		for _, attr := range n.Attr {
+			if strings.ToLower(attr.Key) == "type" {
+				// If type is not empty and not a JS type, it's not executable
+				lowerType := strings.ToLower(attr.Val)
+				if lowerType != "" && lowerType != "text/javascript" &&
+					lowerType != "application/javascript" && lowerType != "text/ecmascript" &&
+					lowerType != "application/ecmascript" && lowerType != "module" {
+					return ContextTypeHTMLContent
+				}
+			}
+		}
 		return ContextTypeJavaScript
 	}
 
@@ -368,9 +381,4 @@ func (a *Analyzer) getContextFromParent(n *html.Node) ContextType {
 	}
 
 	return ContextTypeHTMLContent
-}
-
-// Helper function to check if a request has a response
-func hasResponse(gr fuzz.GeneratedRequest) bool {
-	return gr.Response != nil
 }

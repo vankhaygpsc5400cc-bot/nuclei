@@ -199,6 +199,12 @@ func TestAnalyzer_analyzeHTMLContext(t *testing.T) {
 			expected: ContextTypeHTMLContent,
 		},
 		{
+			name:     "Case insensitive HTML content",
+			body:     `<html><body><div>test ALERT(1) payload</div></body></html>`,
+			payload:  "alert(1)",
+			expected: ContextTypeHTMLContent,
+		},
+		{
 			name:     "Event handler attribute",
 			body:     `<html><body><button onclick="alert(1)">click</button></body></html>`,
 			payload:  "alert(1)",
@@ -207,6 +213,12 @@ func TestAnalyzer_analyzeHTMLContext(t *testing.T) {
 		{
 			name:     "HTML attribute",
 			body:     `<html><body><input value="test alert(1)">`,
+			payload:  "alert(1)",
+			expected: ContextTypeHTMLAttribute,
+		},
+		{
+			name:     "Case insensitive attribute",
+			body:     `<html><body><input value="test ALERT(1)">`,
 			payload:  "alert(1)",
 			expected: ContextTypeHTMLAttribute,
 		},
@@ -221,6 +233,18 @@ func TestAnalyzer_analyzeHTMLContext(t *testing.T) {
 			body:     `<html><body><script>var x = "alert(1)";</script></body></html>`,
 			payload:  "alert(1)",
 			expected: ContextTypeJavaScript,
+		},
+		{
+			name:     "Script tag with application/json",
+			body:     `<html><body><script type="application/json">{"key": "alert(1)"}</script></body></html>`,
+			payload:  "alert(1)",
+			expected: ContextTypeHTMLContent,
+		},
+		{
+			name:     "Script tag with text/json",
+			body:     `<html><body><script type="text/json">{"key": "alert(1)"}</script></body></html>`,
+			payload:  "alert(1)",
+			expected: ContextTypeHTMLContent,
 		},
 		{
 			name:     "Style content",
@@ -256,6 +280,18 @@ func TestAnalyzer_analyzeHTMLContext(t *testing.T) {
 			name:     "vbscript URI in href",
 			body:     `<html><body><a href="vbscript:msgbox(1)">test</a></body></html>`,
 			payload:  "msgbox(1)",
+			expected: ContextTypeJavaScriptURI,
+		},
+		{
+			name:     "Case insensitive srcdoc",
+			body:     `<html><body><iframe SRCDOC="<script>alert(1)</script>"></iframe></body></html>`,
+			payload:  "alert(1)",
+			expected: ContextTypeSrcDoc,
+		},
+		{
+			name:     "Case insensitive javascript URI",
+			body:     `<html><body><a href="JAVASCRIPT:alert(1)">test</a></body></html>`,
+			payload:  "alert(1)",
 			expected: ContextTypeJavaScriptURI,
 		},
 	}
