@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/antchfx/htmlquery"
-	"github.com/projectdiscovery/nuclei/v3/pkg/fuzz"
 	"github.com/projectdiscovery/nuclei/v3/pkg/fuzz/analyzers"
 	"github.com/projectdiscovery/retryablehttp-go"
 	"golang.org/x/net/html"
@@ -59,7 +58,7 @@ func (a *Analyzer) ApplyInitialTransformation(data string, params map[string]int
 }
 
 // javascriptURIRegex matches javascript: and vbscript: URIs
-var javascriptURIRegex = regexp.MustCompile(`(?i)^(javascript|vbscript):`)
+var javascriptURIRegex = regexp.MustCompile(`(?i)(javascript|vbscript):`)
 
 // srcdocAttrRegex matches srcdoc attributes
 var srcdocAttrRegex = regexp.MustCompile(`(?i)\bsrcdoc\s*=`)
@@ -83,7 +82,6 @@ var eventHandlerAttrs = map[string]bool{
 	"onmouseup":    true,
 	"onmouseout":   true,
 	"onmousemove":  true,
-	"onhover":      true,
 	"onabort":      true,
 	"oncanplay":    true,
 	"oncanplaythrough": true,
@@ -168,8 +166,9 @@ func (a *Analyzer) Analyze(options *analyzers.Options) (bool, string, error) {
 	}
 	defer resp.Body.Close()
 
-	// Read the response body
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// Read the response body with a limit to prevent memory exhaustion
+	maxSize := int64(10 * 1024 * 1024) // 10MB default
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
 	if err != nil {
 		return false, "", err
 	}
@@ -368,9 +367,4 @@ func (a *Analyzer) getContextFromParent(n *html.Node) ContextType {
 	}
 
 	return ContextTypeHTMLContent
-}
-
-// Helper function to check if a request has a response
-func hasResponse(gr fuzz.GeneratedRequest) bool {
-	return gr.Response != nil
 }
