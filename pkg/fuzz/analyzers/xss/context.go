@@ -7,9 +7,7 @@ import (
 
 	"github.com/antchfx/htmlquery"
 	"github.com/projectdiscovery/nuclei/v3/pkg/fuzz/analyzers"
-	"github.com/projectdiscovery/retryablehttp-go"
 	"golang.org/x/net/html"
-	"golang.org/x/net/html/atom"
 )
 
 // Analyzer is an XSS context analyzer for the fuzzer
@@ -316,7 +314,7 @@ func (a *Analyzer) getContextFromParent(n *html.Node) ContextType {
 		return ContextTypeHTMLContent
 	}
 
-	tagName := strings.ToLower(atom.String(n.Data))
+	tagName := strings.ToLower(n.Data)
 
 	// Script elements are in JavaScript context
 	if tagName == "script" {
