@@ -97,6 +97,10 @@ type Runner struct {
 	httpStats          *outputstats.Tracker
 	Logger             *gologger.Logger
 
+	// authTemplateStore contains the auth templates from secret-file
+	// that need to be executed before regular templates
+	authTemplateStore *loader.Store
+
 	//general purpose temporary directory
 	tmpDir          string
 	parser          parser.Parser
@@ -583,6 +587,8 @@ func (r *Runner) RunEnumeration() error {
 		if err != nil {
 			return errors.Wrap(err, "failed to load dynamic auth templates")
 		}
+		// Store auth template store for later execution before regular templates
+		r.authTemplateStore = authTmplStore
 		authOpts := &authprovider.AuthProviderOptions{SecretsFiles: r.options.SecretsFile}
 		authOpts.LazyFetchSecret = GetLazyAuthFetchCallback(&AuthLazyFetchOptions{
 			TemplateStore: authTmplStore,
@@ -804,6 +810,23 @@ func (r *Runner) isInputNonHTTP() bool {
 func (r *Runner) executeSmartWorkflowInput(executorOpts *protocols.ExecutorOptions, store *loader.Store, engine *core.Engine) (*atomic.Bool, error) {
 	r.progress.Init(r.inputProvider.Count(), 0, 0)
 
+	// If auth template store exists (secret-file was used), execute auth templates first
+	// to ensure authentication is complete before running regular templates
+	if r.authTemplateStore != nil {
+		authTemplates := []*templates.Template{}
+		authTemplates = append(authTemplates, r.authTemplateStore.Templates()...)
+		authTemplates = append(authTemplates, r.authTemplateStore.Workflows()...)
+
+		if len(authTemplates) > 0 {
+			r.Logger.Info().Msgf("Executing %d auth template(s) from secret-file before regular templates", len(authTemplates))
+			// Execute auth templates and wait for completion
+			authResults := engine.ExecuteScanWithOpts(context.Background(), authTemplates, r.inputProvider, r.options.DisableClustering)
+			// Note: We don't early return on auth failure because some auth templates
+			// might be optional and the scan should continue
+			_ = authResults
+		}
+	}
+
 	service, err := automaticscan.New(automaticscan.Options{
 		ExecuterOpts: executorOpts,
 		Store:        store,
@@ -844,6 +867,24 @@ func (r *Runner) executeTemplatesInput(store *loader.Store, engine *core.Engine)
 	if r.inputProvider == nil {
 		return nil, errors.New("no input provider found")
 	}
+
+	// If auth template store exists (secret-file was used), execute auth templates first
+	// to ensure authentication is complete before running regular templates
+	if r.authTemplateStore != nil {
+		authTemplates := []*templates.Template{}
+		authTemplates = append(authTemplates, r.authTemplateStore.Templates()...)
+		authTemplates = append(authTemplates, r.authTemplateStore.Workflows()...)
+
+		if len(authTemplates) > 0 {
+			r.Logger.Info().Msgf("Executing %d auth template(s) from secret-file before regular templates", len(authTemplates))
+			// Execute auth templates and wait for completion
+			authResults := engine.ExecuteScanWithOpts(context.Background(), authTemplates, r.inputProvider, r.options.DisableClustering)
+			// Note: We don't early return on auth failure because some auth templates
+			// might be optional and the scan should continue
+			_ = authResults
+		}
+	}
+
 	results := engine.ExecuteScanWithOpts(context.Background(), finalTemplates, r.inputProvider, r.options.DisableClustering)
 	return results, nil
 }
